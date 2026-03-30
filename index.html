@@ -362,6 +362,50 @@
     image-rendering: pixelated;
   }
 
+  /* ── Formatting buttons ── */
+  .fmt-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .fmt-chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--muted);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+    user-select: none;
+  }
+  .fmt-chip:hover { border-color: var(--border-hover); color: var(--text); }
+  .fmt-chip.active { border-color: rgba(124,106,247,0.5); background: rgba(124,106,247,0.08); color: var(--text); }
+
+  .fmt-chip-preview {
+    font-family: 'Minecraft', 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: #e8eaf0;
+    pointer-events: none;
+  }
+  .fmt-chip-preview.bold { font-weight: bold; }
+  .fmt-chip-preview.italic { font-style: italic; }
+  .fmt-chip-preview.underline { text-decoration: underline; }
+  .fmt-chip-preview.strike { text-decoration: line-through; }
+  .fmt-chip-preview.obf { filter: blur(3px); }
+
+  .fmt-code {
+    font-size: 11px;
+    color: var(--muted);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .fmt-chip.active .fmt-code { color: #a89bfa; }
+
   /* ── Format tabs ── */
   .format-tabs {
     display: flex;
@@ -530,6 +574,33 @@
       <div class="color-stops-grid" id="stops"></div>
     </div>
 
+    <!-- Formatting -->
+    <div class="card-section">
+      <div class="section-label">Formatting</div>
+      <div class="fmt-grid">
+        <button class="fmt-chip" data-code="l">
+          <span class="fmt-code">&l</span>
+          <span class="fmt-chip-preview bold">Bold</span>
+        </button>
+        <button class="fmt-chip" data-code="o">
+          <span class="fmt-code">&o</span>
+          <span class="fmt-chip-preview italic">Italic</span>
+        </button>
+        <button class="fmt-chip" data-code="n">
+          <span class="fmt-code">&n</span>
+          <span class="fmt-chip-preview underline">Underline</span>
+        </button>
+        <button class="fmt-chip" data-code="m">
+          <span class="fmt-code">&m</span>
+          <span class="fmt-chip-preview strike">Strike</span>
+        </button>
+        <button class="fmt-chip" data-code="k">
+          <span class="fmt-code">&k</span>
+          <span class="fmt-chip-preview obf">Obfuscated</span>
+        </button>
+      </div>
+    </div>
+
     <!-- Preview -->
     <div class="card-section">
       <div class="section-label">Preview</div>
@@ -589,6 +660,7 @@ const LEGACY = [
 
 let stopColors = [...DEFAULTS[0]];
 let fmt = 'amphex';
+let activeFormats = new Set();
 let copyTimer = null;
 
 function hexToRgb(h) {
@@ -623,37 +695,52 @@ function closestLegacy(hex) {
   }, { d: Infinity, ...LEGACY[0] });
 }
 
+function getFormatCodes() {
+  if (!activeFormats.size) return '';
+  return [...activeFormats].map(c => `&${c}`).join('');
+}
+
 function buildCode(chars) {
+  const fmtCodes = getFormatCodes();
+  let body = '';
   if (fmt === 'amphex') {
-    return chars.map(({ ch, color }) => {
+    body = chars.map(({ ch, color }) => {
       const hex = color.slice(1).toUpperCase();
-      return `&#${hex}${ch}`;
+      return `&#${hex}${fmtCodes}${ch}`;
     }).join('');
-  }
-  if (fmt === 'andx') {
-    return chars.map(({ ch, rgb }) => {
+  } else if (fmt === 'andx') {
+    body = chars.map(({ ch, rgb }) => {
       const r = rgb.r.toString(16).padStart(2,'0');
       const g = rgb.g.toString(16).padStart(2,'0');
       const b = rgb.b.toString(16).padStart(2,'0');
-      return `&x&${r[0]}&${r[1]}&${g[0]}&${g[1]}&${b[0]}&${b[1]}${ch}`;
+      return `&x&${r[0]}&${r[1]}&${g[0]}&${g[1]}&${b[0]}&${b[1]}${fmtCodes}${ch}`;
     }).join('');
-  }
-  if (fmt === 'legacy') {
-    let out = '', last = '';
+  } else if (fmt === 'legacy') {
+    let last = '';
     chars.forEach(({ ch, color }) => {
       const lc = closestLegacy(color);
-      if (lc.c !== last) { out += `&${lc.c}`; last = lc.c; }
-      out += ch;
+      if (lc.c !== last) { body += `&${lc.c}`; last = lc.c; }
+      body += fmtCodes + ch;
     });
-    return out;
+  } else {
+    body = chars.map(({ ch, color }) => `<color:${color}>${fmtCodes}${ch}</color>`).join('');
   }
-  return chars.map(({ ch, color }) => `<color:${color}>${ch}</color>`).join('');
+  return body;
 }
 
 function renderPreview(chars) {
   const el = document.getElementById('preview');
   if (!chars.length) { el.textContent = ''; return; }
-  el.innerHTML = chars.map(({ ch, color, rgb }) => {
+  // apply formatting styles
+  el.style.fontWeight = activeFormats.has('l') ? 'bold' : 'normal';
+  el.style.fontStyle = activeFormats.has('o') ? 'italic' : 'normal';
+  const decs = [];
+  if (activeFormats.has('n')) decs.push('underline');
+  if (activeFormats.has('m')) decs.push('line-through');
+  el.style.textDecoration = decs.length ? decs.join(' ') : 'none';
+  el.style.filter = activeFormats.has('k') ? 'blur(4px)' : 'none';
+
+  el.innerHTML = chars.map(({ ch, color }) => {
     const c = fmt === 'legacy' ? closestLegacy(color).h : color;
     return `<span style="color:${c}">${ch === ' ' ? '&nbsp;' : ch.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</span>`;
   }).join('');
@@ -708,6 +795,20 @@ function setCount(n) {
   buildStopUI();
   update();
 }
+
+document.querySelectorAll('.fmt-chip').forEach(b => {
+  b.addEventListener('click', () => {
+    const code = b.dataset.code;
+    if (activeFormats.has(code)) {
+      activeFormats.delete(code);
+      b.classList.remove('active');
+    } else {
+      activeFormats.add(code);
+      b.classList.add('active');
+    }
+    update();
+  });
+});
 
 document.getElementById('inc').addEventListener('click', () => setCount(stopColors.length + 1));
 document.getElementById('dec').addEventListener('click', () => setCount(stopColors.length - 1));
